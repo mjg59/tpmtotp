@@ -72,8 +72,8 @@ you've already lost.
 
 ## TODO
 
-Move sealtotp over to the tspi API in order to allow it to coexist with
-Trousers.
+Add commandline-switch to sealtotp for choosing trousers (tspi) vs direkt
+access (libtpm)
 
 Add support for migration of sealed data to new PCR values in order to
 support bootloader updates.
