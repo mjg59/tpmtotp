@@ -139,7 +139,6 @@ int main(int argc, char *argv[])
 {
 	int ret;
 	char base32_key[BASE32_LEN(keylen)+1];
-	uint32_t parhandle;	/* handle of parent key */
 	unsigned char blob[4096];	/* resulting sealed blob */
 	unsigned int bloblen;	/* blob length */
 	unsigned char wellknown[20] = {0};
@@ -149,8 +148,6 @@ int main(int argc, char *argv[])
 	QRcode *qrcode;
 	int nxtarg;
 
-	parhandle = 0x40000000;
-
 	if (generate_key()) {
 		return -1;
 	}
@@ -158,8 +155,8 @@ int main(int argc, char *argv[])
 	base32_key[BASE32_LEN(keylen)] = NULL;
 	ret = TPM_SealCurrPCR(0x40000000, // SRK
 			      0x000000BF, // PCRs 0-5 and 7
-			      wellknown,  // Well-known secret
-			      NULL,
+			      wellknown,  // Well-known SRK secret
+			      wellknown,  // Well-known SEAL secret
 			      key, keylen,	/* data to be sealed */
 			      blob, &bloblen);	/* buffer to receive result */
 	if (ret != 0) {
