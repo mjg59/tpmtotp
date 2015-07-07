@@ -340,6 +340,7 @@ uint32_t TPM_Transmit(unsigned char *buff, char *msg)
 	uint32_t ret;
 
 	if ((tpmfp = open("/dev/tpm0", O_RDWR)) < 0) {
+		perror("Opening /dev/tpm0");
 		return ERR_IO;
 	}
 	size = LOAD32(buff, TPM_PARAMSIZE_OFFSET);
