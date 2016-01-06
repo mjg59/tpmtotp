@@ -1,6 +1,6 @@
 CFLAGS = -ggdb -w -Ilibtpm -std=c99 -Wall -Wextra -Werror
 
-LDLIBS=-Llibtpm -ltpm -lcrypto -loath -lqrencode
+LDLIBS=-Llibtpm -ltpm -lcrypto -loath
 
 APPS=sealtotp unsealtotp
 
@@ -11,7 +11,7 @@ libtpm/libtpm.a:
 
 unsealtotp: unsealtotp.o
 
-LDLIBS+=-ltspi
+LDLIBS+=-ltspi -lqrencode
 
 sealtotp: sealtotp.o base32.o
 
