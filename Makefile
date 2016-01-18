@@ -25,3 +25,14 @@ sealtotp: sealtotp.c base32.c
 clean:
 	rm -f *.o $(APPS)
 	$(MAKE) -C libtpm clean
+
+install:
+	install sealtotp unsealtotp plymouth-unsealtotp /usr/bin/
+	install -D dracut/module-setup.sh /usr/lib/dracut/modules.d/60tpmtotp/module-setup.sh
+	install -m 0644 tpmtotp.service /lib/systemd/system
+	systemctl enable tpmtotp.service
+
+uninstall:
+	rm /usr/bin/sealtotp /usr/bin/unsealtotp /usr/bin/plymouth-unsealtotp
+	rm -rf /usr/lib/dracut/modules.d/60tpmtotp/
+	rm /lib/systemd/system/tpmtotp.service

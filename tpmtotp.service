@@ -1,0 +1,12 @@
+[Unit]
+Description=Display TPM-sealed TOTP secret during boot
+Requires=plymouth-start.service
+After=plymouth-start.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/plymouth-unsealtotp /etc/tpmtotp
+Restart=no
+
+[Install]
+WantedBy=sysinit.target
