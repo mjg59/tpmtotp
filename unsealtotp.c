@@ -21,6 +21,7 @@
 
 #define keylen 20
 char key[keylen];
+const char efivarfs[] = "/sys/firmware/efi/efivars/";
 
 int main(int argc, char *argv[])
 {
@@ -30,11 +31,17 @@ int main(int argc, char *argv[])
 	unsigned char blob[4096];	/* resulting sealed blob */
 	unsigned int bloblen;	/* blob length */
 	unsigned char passptr1[20] = {0};
-	int fd, outlen;
+	int fd, outlen, i;
 	char totp[7];
 	parhandle = 0x40000000;
+	
+	for (i=1; i<argc; i++) {
+		fd = open(argv[1], O_RDONLY);
+		if (fd < 0) {
+			argv++;
+		}
+	}
 
-	fd = open(argv[1], O_RDONLY);
 	if (fd < 0) {
 		perror("Unable to open file");
 		return -1;
@@ -45,6 +52,7 @@ int main(int argc, char *argv[])
 		perror("Unable to stat file");
 		return -1;
 	}
+
 	bloblen = sbuf.st_size;
 	ret = read(fd, blob, bloblen);
 
@@ -52,6 +60,12 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Unable to read data\n");
 		return -1;
 	}
+
+	if (strncmp(argv[1], efivarfs, strlen(efivarfs)) == 0) {
+		bloblen -= sizeof(int);
+		memmove (blob, blob + sizeof(int), bloblen);
+	}
+
 	ret = TPM_Unseal(parhandle,	/* KEY Entity Value */
 			 passptr1,	/* Key Password */
 			 NULL,

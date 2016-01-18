@@ -31,6 +31,7 @@
 #define keylen 20
 char key[keylen];
 static int margin=1;
+static char efivarfs[] = "/sys/firmware/efi/efivars/";
 
 static void writeANSI_margin(FILE* fp, int realwidth,
 			     char* buffer, int buffer_s,
@@ -247,6 +248,7 @@ int main(int argc, char *argv[])
 {
 	int ret;
 	char base32_key[BASE32_LEN(keylen)+1];
+	unsigned char uefiblob[4100];
 	unsigned char blob[4096];	/* resulting sealed blob */
 	unsigned int bloblen;	/* blob length */
 	unsigned char wellknown[20] = {0};
@@ -283,7 +285,15 @@ int main(int argc, char *argv[])
 			argv[1]);
 		return -1;
 	}
-	ret = fwrite(blob, 1, bloblen, outfile);
+	if (strncmp(argv[1], efivarfs, strlen(efivarfs)) == 0) {
+		int attributes = 7; // NV, RT, BS
+		memcpy(uefiblob, &attributes, sizeof(int));
+		memcpy(uefiblob + sizeof(int), blob, bloblen);
+		bloblen += sizeof(int);
+		ret = fwrite(uefiblob, 1, bloblen, outfile);
+	} else {
+		ret = fwrite(blob, 1, bloblen, outfile);
+	}
 	if (ret != bloblen) {
 		fprintf(stderr,
 			"I/O Error while writing output file '%s'\n",
