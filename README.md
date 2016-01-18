@@ -28,9 +28,15 @@ unsealtotp (and its dependencies) into your initrd and run
 
 ./unsealtotp totpblob
 
+or
+
+./plymouth-unsealtotp totpblob
+
 in your boot process before requesting the disk decryption
 passphrase. Verify that the value matches the value on your phone before
-typing any passphrase.
+typing any passphrase. The plymouth variant talks to the Plymouth boot
+splash service and will display your token in the top left of the screen,
+updating every 30 seconds.
 
 ## requirements
 
