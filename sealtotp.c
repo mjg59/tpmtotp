@@ -178,7 +178,7 @@ int TSPI_SealCurrPCR(uint32_t keyhandle, uint32_t pcrmap,
 	CHECK_ERROR(r, "Error Setting Localities");
 
 	for (uint32_t pcrmask = 1, pcr = 0; pcr < 24; pcr++, pcrmask <<= 1) {
-		if (pcrmap & pcrmask != 0) {
+		if ((pcrmap & pcrmask) != 0) {
 			uint32_t pcrval_size;
 			uint8_t *pcrval;
 			r = Tspi_TPM_PcrRead(tpm, pcr, &pcrval_size, &pcrval);
