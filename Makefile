@@ -20,7 +20,7 @@ plymouth-unsealtotp: plymouth-unsealtotp.c
 	$(CC) $(CFLAGS) $(PLYMOUTH_CFLAGS) -o $@ $< $(PLYMOUTH_LDLIBS) $(LDLIBS)
 
 sealtotp: sealtotp.c base32.c
-	$(CC) $(CFLAGS) -ltspi -lqrencode -o $@ $? $(LDLIBS)
+	$(CC) $(CFLAGS) -ltspi -lqrencode -o $@ $^ $(LDLIBS)
 
 clean:
 	rm -f *.o $(APPS)
