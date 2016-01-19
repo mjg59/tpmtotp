@@ -38,6 +38,19 @@ typing any passphrase. The plymouth variant talks to the Plymouth boot
 splash service and will display your token in the top left of the screen,
 updating every 30 seconds.
 
+## UEFI non-volatile storage
+
+If you use /sys/firmware/efi/efivars/ as a prefix to the filename, tpmtotp
+will handle inserting and removing appropriate attributes and so permit the
+storage of the encrypted secret as a UEFI variable.
+
+## Using multiple filenames
+
+If you pass multiple filenames to the unseal commands, they will attempt to
+open each in turn and use the first that can be successfully opened. This
+allows you to attempt to open a UEFI variable and then fall back to an
+on-disk location.
+
 ## requirements
 
 sealtotp requires libqrencode. unsealtotp requires liboath.
