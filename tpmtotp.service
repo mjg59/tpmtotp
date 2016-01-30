@@ -1,10 +1,12 @@
 [Unit]
 Description=Display TPM-sealed TOTP secret during boot
+DefaultDependencies=false
 Requires=plymouth-start.service
 After=plymouth-start.service
 
 [Service]
 Type=simple
+ExecStartPre=-/usr/sbin/modprobe tpm_tis
 ExecStart=/usr/bin/plymouth-unsealtotp /sys/firmware/efi/efivars/TPMTOTP-6d6a372e-bd74-4ede-975d-df44eccf8226 /etc/tpmtotp
 Restart=no
 

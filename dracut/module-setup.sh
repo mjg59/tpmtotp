@@ -12,11 +12,15 @@ depends() {
 }
 
 install() {
-    inst_simple /usr/bin/unsealtotp
+    inst_simple /usr/bin/plymouth-unsealtotp
     if [ -f /etc/tpmtotp ]; then
 	inst_simple /etc/tpmtotp
     fi
+    inst_simple "/etc/adjtime"
+    inst_simple "/etc/localtime"
     inst_simple "${systemdsystemunitdir}/tpmtotp.service"
+    inst_libdir_file "plymouth/label.so"
+    inst_simple "/usr/share/fonts/dejavu/DejaVuSans.ttf"
     instmods tpm_tis
     mkdir -p "${initdir}${systemdsystemconfdir}/sysinit.target.wants"
     ln_r "${systemdsystemunitdir}/tpmtotp.service" "${systemdsystemconfdir}/sysinit.target.wants/"

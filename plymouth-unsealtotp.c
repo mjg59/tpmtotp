@@ -102,7 +102,7 @@ int main(int argc, char *argv[])
 
 	if (strncmp(argv[1], efivarfs, strlen(efivarfs)) == 0) {
 		bloblen -= sizeof(int);
-		memmove (blob, blob + sizeof(int), bloblen = sizeof(int));
+		memmove (blob, blob + sizeof(int), bloblen);
 	}
 
 	ret = TPM_Unseal(parhandle,	/* KEY Entity Value */
