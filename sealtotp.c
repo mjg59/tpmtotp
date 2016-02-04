@@ -33,6 +33,108 @@ char key[keylen];
 static int margin=1;
 static char efivarfs[] = "/sys/firmware/efi/efivars/";
 
+#define LEN 20
+#define NUM_PCRS 24
+static uint8_t **pcrvals;
+
+#define CHECK_MALLOC(res) if (res == NULL) { fprintf(stderr, "Failed to allocate memory.\n"); exit(EXIT_FAILURE); }
+
+void print_help()
+{
+	char *help = "Usage: sealtotop [OPTION]... OUTFILE\n"
+		"  -h, --help: Print this help.\n"
+		"  -n, --no-qrcode: Don't print the secret as QR code.\n"
+		"  -b, --base32: Print the secret as a base32 string.\n"
+		"  -p, --pcrs: A comma-separated list of PCRs to use. Use n=X to manually set the value \n"
+		"              of PCR n to X, where X is the hex representation of the desired value.\n"
+		"              Default: 1,2,3,4,5,7.\n"
+		"              The hex representation may contain spaces between the bytes like XX XX.";
+
+	printf("%s", help);
+
+}
+
+void convert_hex_to_bytes(char *hex_vals, uint8_t* res)
+{
+
+	int i = 0;
+	unsigned int tmp = 0;
+
+	for (i = 0; i < LEN; i++) {
+		sscanf(hex_vals + 2*i, "%02x", &tmp);
+		res[i] = (uint8_t)tmp;
+	}
+}
+
+
+unsigned int parse_pcrs(char *optarg)
+{
+	uint32_t pcrflag = 0;
+	char *token = strtok(optarg, ",");
+
+	while (token != NULL) {
+
+		unsigned int num = (unsigned int)strtol(token, NULL, 10);
+
+		if (num >= NUM_PCRS) {
+			fprintf(stderr, "Invalid PCR number: %u. Must be between 0 and %u.\n",
+				num, NUM_PCRS-1);
+			exit(EXIT_FAILURE);
+		}
+
+		pcrflag |= (1 << num);
+
+		char *val = strchr(token, '=');
+		uint8_t *res = NULL;
+
+
+		if (val != NULL) { // PCR value supplied
+			val+=1; // ignore delimiter
+
+			res = malloc(LEN * sizeof(uint8_t));
+			CHECK_MALLOC(res);
+
+			if (strlen(val) == LEN*2)  // no spaces
+				convert_hex_to_bytes(val, res);
+
+			else if (strlen(val) == LEN*3-1) { // spaces between each byte (like FF FF), remove them.
+				char *tmp = malloc(2*LEN*sizeof(uint8_t));
+				CHECK_MALLOC(tmp);
+
+				int i = 0;
+				int j = 0;
+
+				for (i = 0; i < strlen(val); i++) {
+					if (val[i] != ' ')
+						tmp[j++] = val[i];
+				}
+
+				if (j != LEN*2) {
+					fprintf(stdout, "Invalid format for PCR %u\n", num);
+					free(res);
+					exit(EXIT_FAILURE);
+				}
+				else {
+					convert_hex_to_bytes(tmp, res);
+				}
+
+				free(tmp);
+
+			} else { // invalid string
+				fprintf(stdout, "Invalid format for PCR %u\n", num);
+				exit(EXIT_FAILURE);
+			}
+
+		}
+
+		pcrvals[num] = res;
+		token = strtok(NULL, ",");
+
+	}
+	return pcrflag;
+}
+
+
 static void writeANSI_margin(FILE* fp, int realwidth,
 			     char* buffer, int buffer_s,
 			     char* white, int white_s )
@@ -46,6 +148,7 @@ static void writeANSI_margin(FILE* fp, int realwidth,
 		fputs(buffer, fp);
 	}
 }
+
 
 static int writeANSI(QRcode *qrcode)
 {
@@ -177,16 +280,23 @@ int TSPI_SealCurrPCR(uint32_t keyhandle, uint32_t pcrmap,
 				TPM_LOC_TWO | TPM_LOC_THREE | TPM_LOC_FOUR);
 	CHECK_ERROR(r, "Error Setting Localities");
 
-	for (uint32_t pcrmask = 1, pcr = 0; pcr < 24; pcr++, pcrmask <<= 1) {
+	for (uint32_t pcrmask = 1, pcr = 0; pcr < NUM_PCRS; pcr++, pcrmask <<= 1) {
 		if ((pcrmap & pcrmask) != 0) {
 			uint32_t pcrval_size;
 			uint8_t *pcrval;
-			r = Tspi_TPM_PcrRead(tpm, pcr, &pcrval_size, &pcrval);
-			CHECK_ERROR(r, "Error Reading PCR");
-			r = Tspi_PcrComposite_SetPcrValue(pcrComposite, pcr, pcrval_size, pcrval);
-			CHECK_ERROR(r, "Error Setting Composite");
-			r = Tspi_Context_FreeMemory(c, pcrval);
-			CHECK_ERROR(r, "Error Freeing Memory");
+			if (pcrvals[pcr] == NULL) {
+			     r = Tspi_TPM_PcrRead(tpm, pcr, &pcrval_size, &pcrval);
+			     CHECK_ERROR(r, "Error Reading PCR");
+			     r = Tspi_PcrComposite_SetPcrValue(pcrComposite, pcr, pcrval_size, pcrval);
+			     CHECK_ERROR(r, "Error Setting Composite");
+			     r = Tspi_Context_FreeMemory(c, pcrval);
+			     CHECK_ERROR(r, "Error Freeing Memory");
+			}
+			else {
+			     pcrval = pcrvals[pcr];
+			     r = Tspi_PcrComposite_SetPcrValue(pcrComposite, pcr, LEN, pcrval);
+			     CHECK_ERROR(r, "Error Setting Composite");
+			}
 		}
 	}
 
@@ -253,6 +363,9 @@ int main(int argc, char *argv[])
 	unsigned int bloblen;	/* blob length */
 	unsigned char wellknown[20] = {0};
 	unsigned char totpstring[64];
+	uint32_t pcrmask =  0x000000BF; // PCRs 0-5 and 7
+
+	char *outfile_name;
 	FILE *infile;
 	FILE *outfile;
 	QRcode *qrcode;
@@ -261,11 +374,75 @@ int main(int argc, char *argv[])
 	if (generate_key()) {
 		return -1;
 	}
+
+	pcrvals = malloc(NUM_PCRS * sizeof(uint8_t*));
+	CHECK_MALLOC(pcrvals);
+
+	static int base32_flag = 0;
+	static int qr_flag = 1;
+	int option_index = 0;
+
+	static struct option long_options[] = {
+	     {"pcrs",  required_argument, 0, 'p'},
+	     {"no-qrcode", no_argument, &qr_flag, 0},
+	     {"base32", no_argument, &base32_flag, 1},
+	     {"help", no_argument, 0, 'h'},
+	     {0,0,0,0}
+
+	};
+
+	if (argc == 1) {
+	     print_help();
+	     exit(EXIT_FAILURE);
+	}
+
+	int c;
+
+	while ((c = getopt_long(argc, argv, "p:nbh", long_options, &option_index)) != -1) {
+
+		switch (c) {
+		case 0: // Flag only
+			break;
+
+		case 'p':
+			pcrmask = parse_pcrs(optarg);
+			break;
+
+		case 'h':
+			print_help();
+			return 0;
+
+		case 'b':
+			base32_flag = 1;
+			break;
+
+		case 'n':
+			qr_flag = 0;
+			break;
+
+		case '?': // Unrecognized Option
+			print_help();
+			exit(EXIT_FAILURE);
+
+		default:
+			print_help();
+		}
+
+	}
+
+	if (optind == argc) {
+		fprintf(stderr, "Output name required!\n");
+		print_help();
+		exit(EXIT_FAILURE);
+	} else {
+		outfile_name = argv[optind];
+	}
+
 	base32_encode(key, keylen, base32_key);
 	base32_key[BASE32_LEN(keylen)] = NULL;
 //	ret = TPM_SealCurrPCR(0x40000000, // SRK
 	ret = TSPI_SealCurrPCR(0x40000000, // SRK
-			      0x000000BF, // PCRs 0-5 and 7
+			      pcrmask,
 			      wellknown,  // Well-known SRK secret
 			      wellknown,  // Well-known SEAL secret
 			      key, keylen,	/* data to be sealed */
@@ -277,15 +454,27 @@ int main(int argc, char *argv[])
 	}
 
 	sprintf(totpstring, "otpauth://totp/TPMTOTP?secret=%s", base32_key);
-	qrcode = QRcode_encodeString(totpstring, 0, QR_ECLEVEL_L, QR_MODE_8, 1);
-	writeANSI(qrcode);
-	outfile = fopen(argv[1], "w");
+
+	if (qr_flag) {
+		qrcode = QRcode_encodeString(totpstring, 0, QR_ECLEVEL_L, QR_MODE_8, 1);
+		writeANSI(qrcode);
+	}
+
+	if (base32_flag) {
+		int j;
+		for(j = 0; j < keylen; j++) {
+			printf("%02x", 0xff & key[j]);
+		}
+		printf("\n");
+	}
+
+	outfile = fopen(outfile_name, "w");
 	if (outfile == NULL) {
 		fprintf(stderr, "Unable to open output file '%s'\n",
-			argv[1]);
+			outfile_name);
 		return -1;
 	}
-	if (strncmp(argv[1], efivarfs, strlen(efivarfs)) == 0) {
+	if (strncmp(outfile_name, efivarfs, strlen(efivarfs)) == 0) {
 		int attributes = 7; // NV, RT, BS
 		memcpy(uefiblob, &attributes, sizeof(int));
 		memcpy(uefiblob + sizeof(int), blob, bloblen);
@@ -297,7 +486,7 @@ int main(int argc, char *argv[])
 	if (ret != bloblen) {
 		fprintf(stderr,
 			"I/O Error while writing output file '%s'\n",
-			argv[1]);
+			outfile_name);
 		return -1;
 	}
 	fclose(outfile);
