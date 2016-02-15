@@ -455,18 +455,15 @@ int main(int argc, char *argv[])
 
 	sprintf(totpstring, "otpauth://totp/TPMTOTP?secret=%s", base32_key);
 
+	if (base32_flag) {
+		printf("%s\n", base32_key);
+	}
+
 	if (qr_flag) {
 		qrcode = QRcode_encodeString(totpstring, 0, QR_ECLEVEL_L, QR_MODE_8, 1);
 		writeANSI(qrcode);
 	}
 
-	if (base32_flag) {
-		int j;
-		for(j = 0; j < keylen; j++) {
-			printf("%02x", 0xff & key[j]);
-		}
-		printf("\n");
-	}
 
 	outfile = fopen(outfile_name, "w");
 	if (outfile == NULL) {
