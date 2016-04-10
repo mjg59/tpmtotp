@@ -1,5 +1,5 @@
+CFLAGS = -ggdb -w -Ilibtpm -std=c99 -Wall -Wextra -Werror -DTPM_POSIX=1 -DTPM_NV_DISK=1 -DTPM_AES=1 -DTPM_V12=1 -DTPM_USE_TAG_IN_STRUCTURE=1 -DTPM_USE_CHARDEV=1
 
-CFLAGS = -ggdb -w -Ilibtpm -std=c99 -Wall -Wextra -Werror
 
 PLYMOUTH_CFLAGS = `pkg-config --cflags ply-boot-client`
 

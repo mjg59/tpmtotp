@@ -1,9 +1,9 @@
 /********************************************************************************/
 /*										*/
-/*			     	TPM HMAC					*/
+/*			     	TPM Low Level Transport				*/
 /*			     Written by S. Berger				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*	      $Id: hmac.h 4702 2013-01-03 21:26:29Z kgoldman $			*/
+/*	      $Id: tpm_lowlevel.h 4702 2013-01-03 21:26:29Z kgoldman $		*/
 /*										*/
 /* (c) Copyright IBM Corporation 2006, 2010.					*/
 /*										*/
@@ -37,22 +37,36 @@
 /* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.		*/
 /********************************************************************************/
 
-#ifndef HMAC_H
-#define HMAC_H
+#ifndef TPM_LOWLEVEL_H
+#define TPM_LOWLEVEL_H
 
-#include <oiaposap.h>
+#include "tpm.h"
 
-uint32_t TSS_authhmac(unsigned char *digest, unsigned char *key, unsigned int keylen,
-             unsigned char *h1, unsigned char *h2, unsigned char h3,...);
-uint32_t TSS_checkhmac1(const struct tpm_buffer *tb, uint32_t command, unsigned char *ononce,
-               unsigned char *key, unsigned int keylen, ...);
-uint32_t TSS_checkhmac1New(const struct tpm_buffer *tb, uint32_t command, session *sess, unsigned char *ononce,
-               unsigned char *key, unsigned int keylen, ...);
-uint32_t TSS_checkhmac2(const struct tpm_buffer *tb, uint32_t command,
-               unsigned char *ononce1,
-               unsigned char *key1, unsigned int keylen1,
-               unsigned char *ononce2,
-               unsigned char *key2, unsigned int keylen2, ...);
-uint32_t TSS_rawhmac(unsigned char *digest, const unsigned char *key, unsigned int keylen, ...);
+struct tpm_transport 
+{
+  uint32_t (*open)(int *fd);
+  uint32_t (*close)(int fd);
+  uint32_t (*send)(int fd, struct tpm_buffer *tb, const char *msg);
+  uint32_t (*recv)(int fd, struct tpm_buffer *tb);
+};
+
+enum {
+    TPM_LOWLEVEL_TRANSPORT_CHARDEV = 1,
+    TPM_LOWLEVEL_TRANSPORT_TCP_SOCKET,
+    TPM_LOWLEVEL_TRANSPORT_UNIXIO,
+    TPM_LOWLEVEL_TRANSPORT_CCA,
+    TPM_LOWLEVEL_TRANSPORT_LIBTPMS,
+};
+
+void TPM_LowLevel_TransportSocket_Set(void);
+void TPM_LowLevel_TransportUnixIO_Set(void);
+void TPM_LowLevel_TransportCharDev_Set(void);
+#ifdef TPM_USE_LIBTPMS
+void TPM_LowLevel_TransportLibTPMS_Set(void);
+#endif
+struct tpm_transport *TPM_LowLevel_Transport_Set(struct tpm_transport *new_tp);
+int TPM_LowLevel_Transport_Init(int choice);
+int TPM_LowLevel_Use_VTPM(void);
+int TPM_LowLevel_VTPM_Set(int state);
 
 #endif

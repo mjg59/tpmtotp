@@ -1,9 +1,9 @@
 /********************************************************************************/
 /*										*/
-/*			     	TPM HMAC					*/
+/*			     	TPM Debug					*/
 /*			     Written by S. Berger				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*	      $Id: hmac.h 4702 2013-01-03 21:26:29Z kgoldman $			*/
+/*        $Id: debug.c 4702 2013-01-03 21:26:29Z kgoldman $			*/
 /*										*/
 /* (c) Copyright IBM Corporation 2006, 2010.					*/
 /*										*/
@@ -37,22 +37,22 @@
 /* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.		*/
 /********************************************************************************/
 
-#ifndef HMAC_H
-#define HMAC_H
 
-#include <oiaposap.h>
+#include <stdio.h>
+#include <stdlib.h>
 
-uint32_t TSS_authhmac(unsigned char *digest, unsigned char *key, unsigned int keylen,
-             unsigned char *h1, unsigned char *h2, unsigned char h3,...);
-uint32_t TSS_checkhmac1(const struct tpm_buffer *tb, uint32_t command, unsigned char *ononce,
-               unsigned char *key, unsigned int keylen, ...);
-uint32_t TSS_checkhmac1New(const struct tpm_buffer *tb, uint32_t command, session *sess, unsigned char *ononce,
-               unsigned char *key, unsigned int keylen, ...);
-uint32_t TSS_checkhmac2(const struct tpm_buffer *tb, uint32_t command,
-               unsigned char *ononce1,
-               unsigned char *key1, unsigned int keylen1,
-               unsigned char *ononce2,
-               unsigned char *key2, unsigned int keylen2, ...);
-uint32_t TSS_rawhmac(unsigned char *digest, const unsigned char *key, unsigned int keylen, ...);
+#include "tpmfunc.h"
 
-#endif
+void print_array(const char *name, const unsigned char *data, unsigned int len)
+{
+	unsigned int i = 0;
+	printf("%s \n",name);
+	while (i < len) {
+	        printf("0x%02X ",data[i]);
+	        i++;
+	        if (0 == (i & 0xf)) {
+	                printf("\n");
+	        }
+	}
+        printf("\n");
+}

@@ -1,19 +1,51 @@
-/*
- * libtpm: sign routines
- *
- * Copyright (C) 2004 IBM Corporation
- * Author: J. Kravitz
- *
- *      This program is free software; you can redistribute it and/or modify
- *      it under the terms of the GNU General Public License as published by
- *      the Free Software Foundation; either version 2 of the License, or
- *      (at your option) any later version.
- */
+/********************************************************************************/
+/*										*/
+/*			     	TPM Signature Routines				*/
+/*			     Written by J. Kravitz, S. Berger			*/
+/*		       IBM Thomas J. Watson Research Center			*/
+/*	      $Id: signature.c 4702 2013-01-03 21:26:29Z kgoldman $		*/
+/*										*/
+/* (c) Copyright IBM Corporation 2006, 2010.					*/
+/*										*/
+/* All rights reserved.								*/
+/* 										*/
+/* Redistribution and use in source and binary forms, with or without		*/
+/* modification, are permitted provided that the following conditions are	*/
+/* met:										*/
+/* 										*/
+/* Redistributions of source code must retain the above copyright notice,	*/
+/* this list of conditions and the following disclaimer.			*/
+/* 										*/
+/* Redistributions in binary form must reproduce the above copyright		*/
+/* notice, this list of conditions and the following disclaimer in the		*/
+/* documentation and/or other materials provided with the distribution.		*/
+/* 										*/
+/* Neither the names of the IBM Corporation nor the names of its		*/
+/* contributors may be used to endorse or promote products derived from		*/
+/* this software without specific prior written permission.			*/
+/* 										*/
+/* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS		*/
+/* "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT		*/
+/* LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR	*/
+/* A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT		*/
+/* HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,	*/
+/* SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT		*/
+/* LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,	*/
+/* DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY	*/
+/* THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT		*/
+/* (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE	*/
+/* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.		*/
+/********************************************************************************/
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef TPM_POSIX
 #include <netinet/in.h>
+#endif
+#ifdef TPM_WINDOWS
+#include <winsock2.h>
+#endif
 #include <tpm.h>
 #include <tpmfunc.h>
 #include <tpmutil.h>
@@ -37,96 +69,109 @@
 /*                                                                          */
 /****************************************************************************/
 uint32_t TPM_Sign(uint32_t keyhandle, unsigned char *keyauth,
-		  unsigned char *data, int datalen,
-		  unsigned char *sig, unsigned int *siglen)
-{
-	unsigned char sign_fmt[] = "00 c2 T l l @ l % o %";
-	unsigned char sign_fmt_noauth[] = "00 c1 T l l @";
+             unsigned char *data, uint32_t datalen, 
+             unsigned char *sig, uint32_t *siglen) {
 	uint32_t ret;
-	unsigned char tpmdata[TPM_MAX_BUFF_SIZE];
+	STACK_TPM_BUFFER(tpmdata)
 	unsigned char nonceodd[TPM_NONCE_SIZE];
-	unsigned char evennonce[TPM_NONCE_SIZE];
 	unsigned char pubauth[TPM_HASH_SIZE];
-	unsigned char c;
-	uint32_t ordinal;
-	uint32_t keyhndl;
-	uint32_t authhandle;
-	uint32_t datasize;
+	unsigned char c = 0;
+	uint32_t ordinal = htonl(TPM_ORD_Sign);
+	uint32_t keyhndl = htonl(keyhandle);
+	uint32_t datasize = htonl(datalen);
 	uint32_t sigsize;
 
 	/* check input arguments */
-	if (data == NULL || sig == NULL)
-		return ERR_NULL_ARG;
-	if (keyauth != NULL) {	/* key requires authorization */
-		/* generate odd nonce */
-		TSS_gennonce(nonceodd);
+	if (data == NULL || sig == NULL) return ERR_NULL_ARG;
+	
+	ret = needKeysRoom(keyhandle, 0, 0, 0);
+	if (ret != 0) {
+		return ret;
+	}
+
+	if (keyauth != NULL)  /* key requires authorization */
+	{
+		session sess;
+		/* 
+		    generate odd nonce from data. This is
+                    good, but for a test suite it should
+                    be OK. I need to do this to be able to later on
+                    verify the INFO type of signature.
+                */
+		TSS_sha1(data, datalen, nonceodd);
+		
 		/* Open OIAP Session */
-		ret = TSS_OIAPopen(&authhandle, evennonce);
+		ret = TSS_SessionOpen(SESSION_OSAP|SESSION_OIAP|SESSION_DSAP,
+		                      &sess,
+		                      keyauth, TPM_ET_KEYHANDLE, keyhandle);
 		if (ret != 0)
 			return ret;
-		/* Network byte order data to variables for hmac calculation */
-		ordinal = htonl(0x3C);
-		keyhndl = htonl(keyhandle);
-		datasize = htonl(datalen);
-		c = 0;
+
 		/* calculate authorization HMAC value */
-		ret =
-		    TSS_authhmac(pubauth, keyauth, TPM_HASH_SIZE,
-				 evennonce, nonceodd, c, TPM_U32_SIZE,
-				 &ordinal, TPM_U32_SIZE, &datasize,
-				 datalen, data, 0, 0);
+		ret = TSS_authhmac(pubauth,TSS_Session_GetAuth(&sess),TPM_HASH_SIZE,TSS_Session_GetENonce(&sess),nonceodd,c,
+		                   TPM_U32_SIZE,&ordinal,
+		                   TPM_U32_SIZE,&datasize,
+		                   datalen,data,
+		                   0,0);
 		if (ret != 0) {
-			TSS_OIAPclose(authhandle);
+			TSS_SessionClose(&sess);
 			return ret;
 		}
 		/* build the request buffer */
-		ret = TSS_buildbuff(sign_fmt, tpmdata,
-				    ordinal,
-				    keyhndl,
-				    datalen, data,
-				    authhandle,
-				    TPM_NONCE_SIZE, nonceodd,
-				    c, TPM_HASH_SIZE, pubauth);
+		ret = TSS_buildbuff("00 c2 T l l @ L % o %",&tpmdata,
+		                    ordinal,
+		                    keyhndl,
+		                    datalen,data,
+		                    TSS_Session_GetHandle(&sess),
+		                    TPM_NONCE_SIZE,nonceodd,
+		                    c,
+		                    TPM_HASH_SIZE,pubauth);
 		if ((ret & ERR_MASK) != 0) {
-			TSS_OIAPclose(authhandle);
+			TSS_SessionClose(&sess);
 			return ret;
 		}
-		/* transmit buffer to the TPM device and read the reply */
-		ret = TPM_Transmit(tpmdata, "Sign");
+		/* transmit the request buffer to the TPM device and read the reply */
+		ret = TPM_Transmit(&tpmdata,"Sign");
+		TSS_SessionClose(&sess);
 		if (ret != 0) {
-			TSS_OIAPclose(authhandle);
 			return ret;
 		}
-		TSS_OIAPclose(authhandle);
-		sigsize = LOAD32(tpmdata, TPM_DATA_OFFSET);
-		/* check the HMAC in the response */
-		ret =
-		    TSS_checkhmac1(tpmdata, ordinal, nonceodd, keyauth,
-				   TPM_HASH_SIZE, TPM_U32_SIZE,
-				   TPM_DATA_OFFSET, sigsize,
-				   TPM_DATA_OFFSET + TPM_U32_SIZE, 0, 0);
-		if (ret != 0)
+		ret = tpm_buffer_load32(&tpmdata,TPM_DATA_OFFSET, &sigsize);
+		if ((ret & ERR_MASK)) {
 			return ret;
-		memcpy(sig, tpmdata + TPM_DATA_OFFSET + TPM_U32_SIZE,
+		}
+		/* check the HMAC in the response */
+		ret = TSS_checkhmac1(&tpmdata,ordinal,nonceodd,TSS_Session_GetAuth(&sess),TPM_HASH_SIZE,
+		                     TPM_U32_SIZE,TPM_DATA_OFFSET,
+		                     sigsize,TPM_DATA_OFFSET+TPM_U32_SIZE,
+		                     0,0);
+		if (ret != 0) 
+			return ret;
+		memcpy(sig,
+		       &tpmdata.buffer[TPM_DATA_OFFSET+TPM_U32_SIZE],
 		       sigsize);
 		*siglen = sigsize;
-	} else {		/* key requires NO authorization */
-
-		/* Network byte order data to variables for hmac calculation */
-		ordinal = htonl(0x3C);
-		keyhndl = htonl(keyhandle);
-		datasize = htonl(datalen);
+	} else /* key requires NO authorization */ {
+		/* move Network byte order data to variables for hmac calculation */
 		/* build the request buffer */
-		ret = TSS_buildbuff(sign_fmt_noauth, tpmdata,
-				    ordinal, keyhndl, datalen, data);
-		if ((ret & ERR_MASK) != 0)
+		ret = TSS_buildbuff("00 c1 T l l @",&tpmdata,
+		                    ordinal,
+		                    keyhndl,
+		                    datalen,data);
+		if ((ret & ERR_MASK) != 0) 
 			return ret;
-		/* transmit buffer to the TPM device and read the reply */
-		ret = TPM_Transmit(tpmdata, "Sign");
-		if (ret != 0)
+		/* transmit the request buffer to the TPM device and read the reply */
+		ret = TPM_Transmit(&tpmdata,"Sign");
+		if (ret != 0) 
 			return ret;
-		sigsize = LOAD32(tpmdata, TPM_DATA_OFFSET);
-		memcpy(sig, tpmdata + TPM_DATA_OFFSET + TPM_U32_SIZE,
+		ret     = tpm_buffer_load32(&tpmdata,
+		                            TPM_DATA_OFFSET,
+		                            &sigsize);
+		if ((ret & ERR_MASK)) {
+			return ret;
+		}
+		memcpy(sig,
+		       &tpmdata.buffer[TPM_DATA_OFFSET+TPM_U32_SIZE],
 		       sigsize);
 		*siglen = sigsize;
 	}

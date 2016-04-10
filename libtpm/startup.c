@@ -1,9 +1,9 @@
 /********************************************************************************/
 /*										*/
-/*			     	TPM HMAC					*/
+/*			     	TPM Startup Routines				*/
 /*			     Written by S. Berger				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*	      $Id: hmac.h 4702 2013-01-03 21:26:29Z kgoldman $			*/
+/*	      $Id: startup.c 4702 2013-01-03 21:26:29Z kgoldman $		*/
 /*										*/
 /* (c) Copyright IBM Corporation 2006, 2010.					*/
 /*										*/
@@ -37,22 +37,80 @@
 /* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.		*/
 /********************************************************************************/
 
-#ifndef HMAC_H
-#define HMAC_H
-
-#include <oiaposap.h>
-
-uint32_t TSS_authhmac(unsigned char *digest, unsigned char *key, unsigned int keylen,
-             unsigned char *h1, unsigned char *h2, unsigned char h3,...);
-uint32_t TSS_checkhmac1(const struct tpm_buffer *tb, uint32_t command, unsigned char *ononce,
-               unsigned char *key, unsigned int keylen, ...);
-uint32_t TSS_checkhmac1New(const struct tpm_buffer *tb, uint32_t command, session *sess, unsigned char *ononce,
-               unsigned char *key, unsigned int keylen, ...);
-uint32_t TSS_checkhmac2(const struct tpm_buffer *tb, uint32_t command,
-               unsigned char *ononce1,
-               unsigned char *key1, unsigned int keylen1,
-               unsigned char *ononce2,
-               unsigned char *key2, unsigned int keylen2, ...);
-uint32_t TSS_rawhmac(unsigned char *digest, const unsigned char *key, unsigned int keylen, ...);
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#ifdef TPM_POSIX
+#include <netinet/in.h>
 #endif
+#ifdef TPM_WINDOWS
+#include <winsock2.h>
+#endif
+#include <tpm.h>
+#include <tpmfunc.h>
+#include <tpmutil.h>
+#include <oiaposap.h>
+#include <hmac.h>
+#include <tpm_types.h>
+#include <tpm_constants.h>
+
+uint32_t TPM_Startup(uint16_t type)
+{
+	uint32_t ret;
+	uint32_t ordinal_no = htonl(TPM_ORD_Startup);
+	STACK_TPM_BUFFER(tpmdata)
+	uint16_t type_no = htons(type);
+	
+	ret = TSS_buildbuff("00 c1 T l s",&tpmdata,
+	                             ordinal_no,
+	                               type_no);
+	if ((ret & ERR_MASK)) {
+		return ret;
+	}
+	
+	ret = TPM_Transmit(&tpmdata,"Startup");
+	
+	if (ret == 0 && tpmdata.used != 10) {
+		ret = ERR_BAD_RESP;
+	}
+	
+	return ret;
+}
+
+uint32_t TPM_SaveState()
+{
+	uint32_t ret;
+	uint32_t ordinal_no = htonl(TPM_ORD_SaveState);
+	STACK_TPM_BUFFER(tpmdata)
+	
+	ret = TSS_buildbuff("00 c1 T l",&tpmdata,
+	                             ordinal_no);
+	if ((ret & ERR_MASK)) {
+		return ret;
+	}
+	
+	ret = TPM_Transmit(&tpmdata,"SaveState");
+
+	if (ret == 0 && tpmdata.used != 10) {
+		ret = ERR_BAD_RESP;
+	}
+	
+	return ret;
+}
+
+uint32_t TPM_Init()
+{
+	uint32_t ret;
+	uint32_t ordinal_no = htonl(TPM_ORD_Init);
+	STACK_TPM_BUFFER(tpmdata);
+	
+	ret = TSS_buildbuff("00 c1 T l",&tpmdata,
+	                             ordinal_no);
+	if ((ret & ERR_MASK)) {
+		return ret;
+	}
+	
+	ret = TPM_Transmit(&tpmdata,"Init");
+	
+	return ret;
+}

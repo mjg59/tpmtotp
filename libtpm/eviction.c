@@ -1,9 +1,9 @@
 /********************************************************************************/
 /*										*/
-/*			     	TPM HMAC					*/
+/*			     	TPM Eviction Routines				*/
 /*			     Written by S. Berger				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*	      $Id: hmac.h 4702 2013-01-03 21:26:29Z kgoldman $			*/
+/*	      $Id: eviction.c 4702 2013-01-03 21:26:29Z kgoldman $		*/
 /*										*/
 /* (c) Copyright IBM Corporation 2006, 2010.					*/
 /*										*/
@@ -37,22 +37,50 @@
 /* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.		*/
 /********************************************************************************/
 
-#ifndef HMAC_H
-#define HMAC_H
-
-#include <oiaposap.h>
-
-uint32_t TSS_authhmac(unsigned char *digest, unsigned char *key, unsigned int keylen,
-             unsigned char *h1, unsigned char *h2, unsigned char h3,...);
-uint32_t TSS_checkhmac1(const struct tpm_buffer *tb, uint32_t command, unsigned char *ononce,
-               unsigned char *key, unsigned int keylen, ...);
-uint32_t TSS_checkhmac1New(const struct tpm_buffer *tb, uint32_t command, session *sess, unsigned char *ononce,
-               unsigned char *key, unsigned int keylen, ...);
-uint32_t TSS_checkhmac2(const struct tpm_buffer *tb, uint32_t command,
-               unsigned char *ononce1,
-               unsigned char *key1, unsigned int keylen1,
-               unsigned char *ononce2,
-               unsigned char *key2, unsigned int keylen2, ...);
-uint32_t TSS_rawhmac(unsigned char *digest, const unsigned char *key, unsigned int keylen, ...);
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#ifdef TPM_POSIX
+#include <netinet/in.h>
 #endif
+#ifdef TPM_WINDOWS
+#include <winsock2.h>
+#endif
+#include <tpm.h>
+#include <tpmfunc.h>
+#include <tpmutil.h>
+#include <oiaposap.h>
+#include <hmac.h>
+#include <tpm_types.h>
+#include <tpm_constants.h>
+
+uint32_t TPM_FlushSpecific(uint32_t handle,
+                           uint32_t resourceType)
+{
+	uint32_t ret;
+	uint32_t ordinal_no = htonl(TPM_ORD_FlushSpecific);
+	uint32_t handle_no  = htonl(handle);
+	uint32_t resourceType_no = htonl(resourceType);
+	STACK_TPM_BUFFER(tpmdata)
+	
+#if 0
+	if (resourceType == TPM_RT_KEY) {
+		ret = needKeysRoom(handle, 0, 0, 0);
+		if (ret != 0) {
+			return ret;
+		}
+	}
+#endif
+	
+	ret = TSS_buildbuff("00 c1 T l l l",&tpmdata,
+	                             ordinal_no,
+	                               handle_no,
+	                                 resourceType_no);
+	if ((ret & ERR_MASK)) {
+		return ret;
+	}
+	
+	ret = TPM_Transmit(&tpmdata,"FlushSpecific");
+	
+	return ret;
+}
