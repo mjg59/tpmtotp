@@ -29,41 +29,44 @@ int main(int argc, char *argv[])
 	struct stat sbuf;	
 	uint32_t parhandle;	/* handle of parent key */
 	unsigned char blob[4096];	/* resulting sealed blob */
-	unsigned int bloblen;	/* blob length */
+	unsigned int bloblen = 322;	/* blob length */
 	unsigned char passptr1[20] = {0};
 	int fd, outlen, i;
 	char totp[7];
 	parhandle = 0x40000000;
-	
-	for (i=1; i<argc; i++) {
-		fd = open(argv[1], O_RDONLY);
-		if (fd < 0) {
-			argv++;
-		}
-	}
 
-	if (fd < 0) {
-		perror("Unable to open file");
-		return -1;
-	}
-
-	ret = fstat(fd, &sbuf);
+	ret = TPM_NV_ReadValue(0x10004d47, 0, 322, blob, &bloblen, NULL);
 	if (ret) {
-		perror("Unable to stat file");
-		return -1;
-	}
+		for (i=1; i<argc; i++) {
+			fd = open(argv[1], O_RDONLY);
+			if (fd < 0) {
+				argv++;
+			}
+		}
 
-	bloblen = sbuf.st_size;
-	ret = read(fd, blob, bloblen);
+		if (fd < 0) {
+			perror("Unable to open file");
+			return -1;
+		}
 
-	if (ret != bloblen) {
-		fprintf(stderr, "Unable to read data\n");
-		return -1;
-	}
+		ret = fstat(fd, &sbuf);
+		if (ret) {
+			perror("Unable to stat file");
+			return -1;
+		}
 
-	if (strncmp(argv[1], efivarfs, strlen(efivarfs)) == 0) {
-		bloblen -= sizeof(int);
-		memmove (blob, blob + sizeof(int), bloblen);
+		bloblen = sbuf.st_size;
+		ret = read(fd, blob, bloblen);
+
+		if (ret != bloblen) {
+			fprintf(stderr, "Unable to read data\n");
+			return -1;
+		}
+
+		if (strncmp(argv[1], efivarfs, strlen(efivarfs)) == 0) {
+			bloblen -= sizeof(int);
+			memmove (blob, blob + sizeof(int), bloblen);
+		}
 	}
 
 	ret = TPM_Unseal(parhandle,	/* KEY Entity Value */

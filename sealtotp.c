@@ -24,9 +24,8 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <qrencode.h>
-#include "tpmfunc.h"
-#include "base32.h"
 #include <tss/tspi.h>
+#include "base32.h"
 
 #define keylen 20
 char key[keylen];
@@ -72,7 +71,7 @@ static int writeANSI(QRcode *qrcode)
 	buffer = (char *)malloc( buffer_s );
 	if(buffer == NULL) {
 		fprintf(stderr, "Failed to allocate memory.\n");
-		exit(EXIT_FAILURE);
+		exit(1);
 	}
 
 	/* top margin */
@@ -139,16 +138,15 @@ int generate_key() {
 	return 0;
 }
 
-int TSPI_SealCurrPCR(uint32_t keyhandle, uint32_t pcrmap,
+int TSPI_SealCurrPCR(TSS_HCONTEXT c, uint32_t keyhandle, uint32_t pcrmap,
 			 unsigned char *keyauth,
 			 unsigned char *dataauth,
 			 unsigned char *data, unsigned int datalen,
 			 unsigned char *blob, unsigned int *bloblen)
 {
-#define CHECK_ERROR(r,m) if (r != TSS_SUCCESS) { fprintf(stderr, m ": 0x%08x\n", r); goto close_ret; }
+#define CHECK_ERROR(r,m) if (r != TSS_SUCCESS) { fprintf(stderr, m ": 0x%08x\n", r); return -1;}
 
 	TSS_RESULT r = 0;
-	TSS_HCONTEXT c;
 	TSS_HTPM tpm;
 	TSS_HPCRS pcrComposite;
 	TSS_UUID uuid;
@@ -158,15 +156,6 @@ int TSPI_SealCurrPCR(uint32_t keyhandle, uint32_t pcrmap,
 	TSS_HPOLICY key_policy, seal_policy;
 	unsigned char *cipher;
 	unsigned int cipher_len;
-
-	/* Get ourselfs a 1.2 context object connected to tcsd */
-	r = Tspi_Context_Create(&c);
-	if (r != TSS_SUCCESS) {
-		fprintf(stderr, "Error Creating Context\n");
-		return -1;
-	}
-	r = Tspi_Context_Connect(c, NULL);
-	CHECK_ERROR(r, "Error Connecting Context");
 
 	/* Get the PCR values into composite object */
 	r = Tspi_Context_GetTpmObject(c, &tpm);
@@ -196,7 +185,7 @@ int TSPI_SealCurrPCR(uint32_t keyhandle, uint32_t pcrmap,
 	} else {
 		fprintf(stderr, "Error, only SRK currently supported\n");
 		r = 1;
-		goto close_ret;
+		return -1;
 	}
 	r = Tspi_Context_LoadKeyByUUID(c, TSS_PS_TYPE_SYSTEM, uuid, &key);
 	CHECK_ERROR(r, "Error Loading Key");
@@ -229,7 +218,7 @@ int TSPI_SealCurrPCR(uint32_t keyhandle, uint32_t pcrmap,
 	if (cipher_len > bloblen) {
 		sprintf(stderr, "Internal Error, cipher too long");
 		r = 1;
-		goto close_ret;
+		return -1;
 	}
 	memcpy(blob, cipher, cipher_len);
 	*bloblen = cipher_len;
@@ -237,10 +226,6 @@ int TSPI_SealCurrPCR(uint32_t keyhandle, uint32_t pcrmap,
 	/* Note: Do not even bother to return cipher directly. Would be freed during Context_Close anyways */
 	Tspi_Context_FreeMemory(c, cipher);
 
-
-close_ret:
-	Tspi_Context_FreeMemory(c, NULL);
-	Tspi_Context_Close(c);
 	return (r == 0)? 0 : -1;
 }
 
@@ -256,15 +241,26 @@ int main(int argc, char *argv[])
 	FILE *infile;
 	FILE *outfile;
 	QRcode *qrcode;
-	int nxtarg;
+	TSS_HCONTEXT c;
 
 	if (generate_key()) {
 		return -1;
 	}
 	base32_encode(key, keylen, base32_key);
 	base32_key[BASE32_LEN(keylen)] = NULL;
-//	ret = TPM_SealCurrPCR(0x40000000, // SRK
-	ret = TSPI_SealCurrPCR(0x40000000, // SRK
+
+	ret = Tspi_Context_Create(&c);
+	if (ret != TSS_SUCCESS) {
+		fprintf(stderr, "Unable to create TPM context\n");
+		return -1;
+	}
+	ret = Tspi_Context_Connect(c, NULL);
+	if (ret != TSS_SUCCESS) {
+		fprintf(stderr, "Unable to connect to TPM\n");
+		return -1;
+	}
+	ret = TSPI_SealCurrPCR(c, // context
+			      0x40000000, // SRK
 			      0x000000BF, // PCRs 0-5 and 7
 			      wellknown,  // Well-known SRK secret
 			      wellknown,  // Well-known SEAL secret
@@ -273,33 +269,81 @@ int main(int argc, char *argv[])
 	if (ret != 0) {
 		fprintf(stderr, "Error %s from TPM_Seal\n",
 			TPM_GetErrMsg(ret));
-		return -1;
+		goto out;
 	}
 
 	sprintf(totpstring, "otpauth://totp/TPMTOTP?secret=%s", base32_key);
 	qrcode = QRcode_encodeString(totpstring, 0, QR_ECLEVEL_L, QR_MODE_8, 1);
 	writeANSI(qrcode);
-	outfile = fopen(argv[1], "w");
-	if (outfile == NULL) {
-		fprintf(stderr, "Unable to open output file '%s'\n",
-			argv[1]);
-		return -1;
-	}
-	if (strncmp(argv[1], efivarfs, strlen(efivarfs)) == 0) {
-		int attributes = 7; // NV, RT, BS
-		memcpy(uefiblob, &attributes, sizeof(int));
-		memcpy(uefiblob + sizeof(int), blob, bloblen);
-		bloblen += sizeof(int);
-		ret = fwrite(uefiblob, 1, bloblen, outfile);
+
+	if (strncmp(argv[1], "-n", 2) == 0) {
+		TSS_HNVSTORE nvObject;
+		TSS_FLAG nvattrs = 0;
+
+		ret = Tspi_Context_CreateObject(c, TSS_OBJECT_TYPE_NV,
+						nvattrs, &nvObject);
+		if (ret != TSS_SUCCESS) {
+			fprintf(stderr, "Unable to create nvram object: %x\n",
+				ret);
+			goto out;
+		}
+		ret = Tspi_SetAttribUint32(nvObject, TSS_TSPATTRIB_NV_INDEX, 0,
+					   0x10004d47);
+		if (ret != TSS_SUCCESS) {
+			fprintf(stderr, "Unable to set index\n");
+			goto out;
+		}
+		ret = Tspi_SetAttribUint32(nvObject,
+					   TSS_TSPATTRIB_NV_PERMISSIONS, 0,
+				   TPM_NV_PER_OWNERREAD|TPM_NV_PER_OWNERWRITE);
+		if (ret != TSS_SUCCESS) {
+			fprintf(stderr, "Unable to set permissions\n");
+			goto out;
+		}
+		ret = Tspi_SetAttribUint32(nvObject, TSS_TSPATTRIB_NV_DATASIZE,
+					   0, bloblen);
+		if (ret != TSS_SUCCESS) {
+			fprintf(stderr, "Unable to set size\n");
+			goto out;
+		}
+		ret = Tspi_NV_DefineSpace(nvObject, NULL, NULL);
+		if (ret != TSS_SUCCESS && ret != (0x3000 | TSS_E_NV_AREA_EXIST)) {
+			fprintf(stderr, "Unable to define space: %x\n", ret);
+			goto out;
+		}
+		ret = Tspi_NV_WriteValue(nvObject, 0, bloblen, blob);
+		if (ret != TSS_SUCCESS) {
+			fprintf(stderr, "Unable to write to nvram\n");
+			goto out;
+		}
 	} else {
-		ret = fwrite(blob, 1, bloblen, outfile);
+		outfile = fopen(argv[1], "w");
+		if (outfile == NULL) {
+			fprintf(stderr, "Unable to open output file '%s'\n",
+				argv[1]);
+			goto out;
+		}
+		if (strncmp(argv[1], efivarfs, strlen(efivarfs)) == 0) {
+			int attributes = 7; // NV, RT, BS
+			memcpy(uefiblob, &attributes, sizeof(int));
+			memcpy(uefiblob + sizeof(int), blob, bloblen);
+			bloblen += sizeof(int);
+			ret = fwrite(uefiblob, 1, bloblen, outfile);
+		} else {
+			ret = fwrite(blob, 1, bloblen, outfile);
+		}
+		if (ret != bloblen) {
+			fprintf(stderr,
+				"I/O Error while writing output file '%s'\n",
+				argv[1]);
+			goto out;
+		}
+		fclose(outfile);
 	}
-	if (ret != bloblen) {
-		fprintf(stderr,
-			"I/O Error while writing output file '%s'\n",
-			argv[1]);
-		return -1;
-	}
-	fclose(outfile);
-	exit(0);
+
+out:
+	Tspi_Context_FreeMemory(c, NULL);
+	Tspi_Context_Close(c);
+
+	exit(ret);
 }
