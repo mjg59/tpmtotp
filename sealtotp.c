@@ -47,8 +47,8 @@ void print_help()
 		"  -b, --base32: Print the secret as a base32 string.\n"
 		"  -p, --pcrs: A comma-separated list of PCRs to use. Use n=X to manually set the value \n"
 		"              of PCR n to X, where X is the hex representation of the desired value.\n"
-		"              Default: 1,2,3,4,5,7.\n"
-		"              The hex representation may contain spaces between the bytes like XX XX.";
+		"              Default: 0,1,2,3,4,5,7,8,9.\n"
+		"              The hex representation may contain spaces between the bytes like XX XX.\n";
 
 	printf("%s", help);
 
