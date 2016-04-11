@@ -38,6 +38,13 @@ typing any passphrase. The plymouth variant talks to the Plymouth boot
 splash service and will display your token in the top left of the screen,
 updating every 30 seconds.
 
+## TPM non-volatile storage
+
+If you pass the -n argument to sealtotp, the sealed secret will be stored
+in nvram on the TPM. plymouth-unsealtotp and unsealtotp will automatically
+attempt to obtain a secret from there before falling back to attempting to
+read from files.
+
 ## UEFI non-volatile storage
 
 If you use /sys/firmware/efi/efivars/ as a prefix to the filename, tpmtotp
@@ -50,6 +57,17 @@ If you pass multiple filenames to the unseal commands, they will attempt to
 open each in turn and use the first that can be successfully opened. This
 allows you to attempt to open a UEFI variable and then fall back to an
 on-disk location.
+
+## Passing PCR values
+
+You can choose which PCR values the secret is sealed to using the -p argument
+to sealtotp. A comma separated list of PCRs will default to using the current
+value of the PCR. If you are sealing a secret to calculated variables, you
+may pass them like so:
+
+```
+sealtotp -p 0=62 64 98 1C B8 2B D1 2F 45 C3 C2 06 18 6B C7 6E 23 EB 21 88, 1=3A 3F 78 0F 11 A4 B4 99 69 FC AA 80 CD 6E 39 57 C3 3B 22 75, 2=3A 3F 78 0F 11 A4 B4 99 69 FC AA 80 CD 6E 39 57 C3 3B 22 75
+```
 
 ## requirements
 
