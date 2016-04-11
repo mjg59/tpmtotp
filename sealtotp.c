@@ -423,13 +423,15 @@ int main(int argc, char *argv[])
 		}
 
 	}
-
-	if (optind == argc) {
-		fprintf(stderr, "Output name required!\n");
-		print_help();
-		return -1;
-	} else {
-		outfile_name = argv[optind];
+	
+	if (!nvram_flag) {
+		if (optind == argc) {
+			fprintf(stderr, "Output name required!\n");
+			print_help();
+			return -1;
+		} else {
+			outfile_name = argv[optind];
+		}
 	}
 
 	base32_encode(key, keylen, base32_key);
