@@ -349,7 +349,7 @@ int main(int argc, char *argv[])
 	unsigned int bloblen;	/* blob length */
 	unsigned char wellknown[20] = {0};
 	unsigned char totpstring[64];
-	uint32_t pcrmask =  0x000000BF; // PCRs 0-5 and 7
+	uint32_t pcrmask =  0x000003BF; // PCRs 0-5 and 7-9
 
 	char *outfile_name;
 	FILE *infile;
